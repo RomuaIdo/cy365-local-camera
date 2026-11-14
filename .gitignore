@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Local data (captures, camera output, generated audio and frames)
+captures/
+*.wav
+*.jpg
+*.pcap
+*.pcapng
+
+# Editors and OS files
+.DS_Store
+.vscode/
+.idea/
