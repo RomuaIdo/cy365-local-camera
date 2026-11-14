@@ -1,0 +1,1024 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Camera Panel</title>
+<style>
+  /* Design tokens from notes/app/design_qt.md (section 1). */
+  :root {
+    --qt-font-family: system-ui, -apple-system, "Segoe UI", Roboto, Noto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+    --qt-font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, Menlo, Monaco, monospace;
+    --qt-font-size-base: 13px;
+    --qt-font-size-sm: 11px;
+    --qt-font-size-title: 14px;
+    --qt-radius-sm: 3px;
+    --qt-radius-base: 5px;
+    --qt-radius-lg: 8px;
+    --qt-focus-ring: 2px solid var(--qt-accent);
+    --qt-focus-offset: 1px;
+  }
+  [data-theme="dark"] {
+    --qt-window-bg: #1e1e1e;
+    --qt-window-title-bg: #2d2d2d;
+    --qt-menubar-bg: #2d2d2d;
+    --qt-sidebar-bg: #252526;
+    --qt-sidebar-active: #37373d;
+    --qt-card-bg: #252526;
+    --qt-card-header: #2d2d30;
+    --qt-statusbar-bg: #2d2d2d;
+    --qt-control-bg: #333333;
+    --qt-control-bg-hover: #3e3e42;
+    --qt-control-bg-pressed: #222222;
+    --qt-control-border: #474747;
+    --qt-control-border-hover: #606060;
+    --qt-text-primary: #e0e0e0;
+    --qt-text-secondary: #aaaaaa;
+    --qt-text-muted: #777777;
+    --qt-accent: #2a82da;
+    --qt-accent-hover: #3a92ea;
+    --qt-accent-pressed: #1a72ca;
+    --qt-accent-text: #ffffff;
+    --qt-success: #2ea44f;
+    --qt-warning: #e3a008;
+    --qt-danger: #e04545;
+    --qt-shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --qt-shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.6);
+    --qt-switch-off: #444444;
+  }
+  [data-theme="light"] {
+    --qt-window-bg: #f0f0f0;
+    --qt-window-title-bg: #e6e6e6;
+    --qt-menubar-bg: #e6e6e6;
+    --qt-sidebar-bg: #e8e8e8;
+    --qt-sidebar-active: #d0d0d0;
+    --qt-card-bg: #ffffff;
+    --qt-card-header: #f5f5f5;
+    --qt-statusbar-bg: #e6e6e6;
+    --qt-control-bg: #f6f6f6;
+    --qt-control-bg-hover: #ffffff;
+    --qt-control-bg-pressed: #e2e2e2;
+    --qt-control-border: #b8b8b8;
+    --qt-control-border-hover: #888888;
+    --qt-text-primary: #1a1a1a;
+    --qt-text-secondary: #555555;
+    --qt-text-muted: #888888;
+    --qt-accent: #2a82da;
+    --qt-accent-hover: #1e70c0;
+    --qt-accent-pressed: #155a9c;
+    --qt-accent-text: #ffffff;
+    --qt-success: #28a745;
+    --qt-warning: #d97706;
+    --qt-danger: #cb2431;
+    --qt-shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --qt-shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.25);
+    --qt-switch-off: #cccccc;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--qt-window-bg);
+    color: var(--qt-text-primary);
+    font-family: var(--qt-font-family);
+    font-size: var(--qt-font-size-base);
+    line-height: 1.4;
+    overflow: hidden;
+  }
+  button, select, input { font: inherit; color: inherit; }
+  :focus-visible { outline: var(--qt-focus-ring); outline-offset: var(--qt-focus-offset); }
+
+  /* Window frame: title bar, menu bar, body, status bar. */
+  .window { display: flex; flex-direction: column; height: 100vh; min-height: 600px; }
+  .titlebar {
+    height: 48px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    background: var(--qt-window-title-bg); border-bottom: 1px solid var(--qt-control-border);
+  }
+  .app-title { font-size: var(--qt-font-size-title); font-weight: 500; }
+  .spacer { flex: 1; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px;
+    font-size: var(--qt-font-size-sm); font-weight: 600; background: rgba(224, 69, 69, 0.2); color: var(--qt-danger);
+  }
+  .chip.ok { background: rgba(46, 164, 79, 0.2); color: var(--qt-success); }
+  .chip.wait { background: rgba(227, 160, 8, 0.2); color: var(--qt-warning); }
+  .window-controls { color: var(--qt-text-muted); letter-spacing: 6px; user-select: none; }
+
+  .menubar {
+    height: 26px; flex: none; display: flex; align-items: stretch; background: var(--qt-menubar-bg);
+    border-bottom: 1px solid var(--qt-control-border); position: relative; z-index: 5;
+  }
+  .menu-item { position: relative; }
+  .menu-button {
+    height: 26px; padding: 0 10px; border: 0; background: transparent; cursor: pointer; color: var(--qt-text-primary);
+  }
+  .menu-button:hover, .menu-button[aria-expanded="true"] { background: var(--qt-control-bg-hover); }
+  .menu-list {
+    position: absolute; top: 26px; left: 0; min-width: 200px; padding: 4px 0; display: none;
+    background: var(--qt-card-bg); border: 1px solid var(--qt-control-border); border-radius: var(--qt-radius-base);
+    box-shadow: var(--qt-shadow-modal);
+  }
+  .menu-list.open { display: block; }
+  .menu-list button {
+    display: block; width: 100%; text-align: left; padding: 5px 16px; border: 0; background: transparent; cursor: pointer;
+  }
+  .menu-list button:hover { background: var(--qt-accent); color: var(--qt-accent-text); }
+  .menu-list button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .menu-list button:disabled:hover { background: transparent; color: inherit; }
+
+  .body { flex: 1; display: flex; min-height: 0; }
+
+  /* Sidebar: 200px; icon-only below 960px (design section 7). */
+  .sidebar {
+    width: 200px; flex: none; background: var(--qt-sidebar-bg); border-right: 1px solid var(--qt-control-border);
+    padding: 8px 0; display: flex; flex-direction: column; gap: 2px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 14px; border: 0; background: transparent;
+    cursor: pointer; text-align: left; color: var(--qt-text-primary);
+  }
+  .nav-item:hover { background: var(--qt-control-bg-hover); }
+  .nav-item[aria-current="page"] { background: var(--qt-sidebar-active); box-shadow: inset 3px 0 0 var(--qt-accent); }
+  .nav-icon { width: 20px; text-align: center; flex: none; }
+
+  .workspace { flex: 1; overflow-y: auto; padding: 16px; min-width: 0; }
+  .screen[hidden] { display: none; }
+  .card {
+    background: var(--qt-card-bg); border: 1px solid var(--qt-control-border); border-radius: var(--qt-radius-base);
+    padding: 16px; margin-bottom: 16px; box-shadow: var(--qt-shadow-subtle);
+  }
+  .card-title {
+    display: inline-block; margin: -26px 0 10px 0; padding: 0 6px; background: var(--qt-card-bg);
+    font-weight: 600; color: var(--qt-accent);
+  }
+  .muted { color: var(--qt-text-secondary); font-size: var(--qt-font-size-sm); }
+  .mono { font-family: var(--qt-font-mono); }
+  .field-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--qt-control-border); }
+  .field-row:last-child { border-bottom: 0; }
+
+  /* Push buttons: standard, primary, danger (design 4.1). */
+  .btn {
+    min-height: 28px; padding: 4px 12px; border-radius: var(--qt-radius-sm); cursor: pointer;
+    background: var(--qt-control-bg); border: 1px solid var(--qt-control-border);
+  }
+  .btn:hover { background: var(--qt-control-bg-hover); border-color: var(--qt-control-border-hover); }
+  .btn:active { background: var(--qt-control-bg-pressed); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
+  .btn.primary { background: var(--qt-accent); border-color: var(--qt-accent); color: var(--qt-accent-text); }
+  .btn.primary:hover { background: var(--qt-accent-hover); }
+  .btn.danger { background: var(--qt-danger); border-color: var(--qt-danger); color: #fff; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+  /* Toggle switch (design 4.2). */
+  .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .track {
+    position: relative; width: 38px; height: 20px; border-radius: 10px; background: var(--qt-switch-off);
+    transition: background 0.15s; flex: none;
+  }
+  .thumb {
+    position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); transition: transform 0.15s;
+  }
+  .switch input:checked + .track { background: var(--qt-accent); }
+  .switch input:checked + .track .thumb { transform: translateX(18px); }
+  .switch input:focus-visible + .track { outline: var(--qt-focus-ring); outline-offset: var(--qt-focus-offset); }
+  .switch input:disabled + .track { opacity: 0.5; }
+  .switch:hover .track { filter: brightness(1.1); }
+
+  /* Combo box and slider (design 4.3, 4.4). */
+  select {
+    height: 28px; padding: 4px 10px; border-radius: var(--qt-radius-sm); min-width: 180px;
+    background: var(--qt-control-bg); border: 1px solid var(--qt-control-border);
+  }
+  select:disabled { opacity: 0.5; }
+  input[type="range"] { width: 180px; accent-color: var(--qt-accent); }
+
+  /* Video screen. */
+  .video-frame {
+    position: relative; background: #000; border-radius: var(--qt-radius-base); overflow: hidden;
+    aspect-ratio: 4 / 3; max-height: 60vh; width: 100%;
+  }
+  .video-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .video-paused {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+    padding: 16px; background: #111; color: var(--qt-text-secondary);
+  }
+  .video-paused[hidden] { display: none; }
+  .overlay-badge { position: absolute; top: 10px; left: 10px; }
+  .fullscreen-target:fullscreen { background: #000; }
+  .fullscreen-target:fullscreen .video-frame { max-height: none; height: 100vh; }
+
+  /* Progress bar for battery. */
+  .progress {
+    display: inline-block; vertical-align: middle; width: 220px; height: 14px; overflow: hidden;
+    background: var(--qt-control-bg); border: 1px solid var(--qt-control-border); border-radius: var(--qt-radius-sm);
+  }
+  .progress-fill { display: block; height: 100%; width: 0; background: var(--qt-success); transition: width 0.3s; }
+
+  /* Status bar (24px). */
+  .statusbar {
+    height: 24px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 10px;
+    background: var(--qt-statusbar-bg); border-top: 1px solid var(--qt-control-border);
+    font-size: var(--qt-font-size-sm); color: var(--qt-text-secondary);
+  }
+  .statusbar .message { color: var(--qt-text-primary); }
+  .statusbar .message.error { color: var(--qt-danger); }
+  .statusbar .panel { white-space: nowrap; }
+  .statusbar .panel.spacer-panel { flex: 1; }
+
+  /* Toast (design 4.7). */
+  .toast {
+    position: fixed; top: 60px; right: 16px; z-index: 30; max-width: 340px; padding: 10px 14px;
+    background: var(--qt-menubar-bg); border: 1px solid var(--qt-accent); border-radius: var(--qt-radius-base);
+    box-shadow: var(--qt-shadow-modal); animation: toast-in 0.25s ease-out;
+  }
+  .toast[hidden] { display: none; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+  /* Connection modal (design 4.8 style). */
+  .modal {
+    position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .modal[hidden] { display: none; }
+  .modal-box {
+    width: 100%; max-width: 420px; padding: 20px; background: var(--qt-card-bg);
+    border: 1px solid var(--qt-control-border); border-radius: var(--qt-radius-lg); box-shadow: var(--qt-shadow-modal);
+  }
+  .modal-box h2 { margin: 0 0 8px; font-size: 16px; }
+  .modal-box input[type="password"] {
+    width: 100%; height: 30px; padding: 4px 10px; border-radius: var(--qt-radius-sm);
+    background: var(--qt-control-bg); border: 1px solid var(--qt-control-border);
+  }
+  .error-box { margin-top: 10px; color: var(--qt-danger); font-size: var(--qt-font-size-sm); }
+  .error-box[hidden] { display: none; }
+
+  /* Narrow windows: icon-only sidebar (design section 7). */
+  @media (max-width: 959px) {
+    .sidebar { width: 56px; }
+    .nav-label { display: none; }
+    .nav-item { justify-content: center; padding: 10px 0; }
+  }
+</style>
+</head>
+<body>
+<div class="window" id="window">
+
+  <header class="titlebar">
+        <span class="app-title">Local Camera Panel</span>
+    <span class="spacer"></span>
+    <span id="conn-pill" class="chip" role="status" aria-live="polite">○ Disconnected</span>
+    <span class="window-controls" aria-hidden="true">_ □ ×</span>
+  </header>
+
+  <nav class="menubar" aria-label="Main menu">
+    <div class="menu-item">
+      <button class="menu-button" data-menu="file" aria-expanded="false" aria-haspopup="true">File</button>
+      <div class="menu-list" id="menu-file" role="menu">
+        <button role="menuitem" data-action="refresh-state">Refresh state</button>
+      </div>
+    </div>
+    <div class="menu-item">
+      <button class="menu-button" data-menu="camera" aria-expanded="false" aria-haspopup="true">Camera</button>
+      <div class="menu-list" id="menu-camera" role="menu">
+        <button role="menuitem" data-action="connect">Connect…</button>
+        <button role="menuitem" data-action="disconnect" id="menu-disconnect" disabled>Disconnect</button>
+      </div>
+    </div>
+    <div class="menu-item">
+      <button class="menu-button" data-menu="view" aria-expanded="false" aria-haspopup="true">View</button>
+      <div class="menu-list" id="menu-view" role="menu">
+        <button role="menuitem" data-action="theme-dark">Dark theme</button>
+        <button role="menuitem" data-action="theme-light">Light theme</button>
+      </div>
+    </div>
+    <div class="menu-item">
+      <button class="menu-button" data-menu="help" aria-expanded="false" aria-haspopup="true">Help</button>
+      <div class="menu-list" id="menu-help" role="menu">
+        <button role="menuitem" data-action="about">About</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="body">
+    <aside class="sidebar" aria-label="Navigation">
+      <button class="nav-item" data-screen="video" aria-current="page" title="Video (Ctrl+1)">
+        <span class="nav-label">Video</span>
+      </button>
+      <button class="nav-item" data-screen="controls" title="Controls (Ctrl+2)">
+        <span class="nav-label">Controls</span>
+      </button>
+      <button class="nav-item" data-screen="info" title="Information (Ctrl+3)">
+        <span class="nav-label">Information</span>
+      </button>
+      <button class="nav-item" data-screen="network" title="Network (Ctrl+4)">
+        <span class="nav-label">Network</span>
+      </button>
+      <button class="nav-item" data-screen="about" title="About (Ctrl+5)">
+        <span class="nav-label">About</span>
+      </button>
+    </aside>
+
+    <main class="workspace">
+
+      <!-- Screen 1: Video -->
+      <section class="screen" id="screen-video" data-screen="video">
+        <div class="card fullscreen-target" id="video-card">
+          <span class="card-title">Live stream</span>
+          <div class="video-frame" id="video-frame">
+            <img id="stream-image" alt="Video stream">
+            <div class="video-paused" id="video-paused">Video paused. Click 'Resume video' to continue.</div>
+            <span class="chip ok overlay-badge" id="video-badge">● Live</span>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="btn-pause-video" disabled>Pause video</button>
+            <button class="btn" id="btn-photo" disabled>Photo</button>
+            <button class="btn" id="btn-fullscreen" disabled>Full screen</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="card-title">Microphone audio</span>
+          <div class="field-row">
+            <label class="switch">
+              <input type="checkbox" id="switch-audio" disabled>
+              <span class="track"><span class="thumb"></span></span>
+              <span>Audio</span>
+            </label>
+            <span class="muted" id="audio-state">Audio off</span>
+          </div>
+          <div class="field-row">
+            <label for="slider-volume">Player volume</label>
+            <span>
+              <input type="range" id="slider-volume" min="0" max="100" value="75" disabled>
+              <span class="mono" id="volume-value">75%</span>
+            </span>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="btn-mute-audio" disabled aria-pressed="false">Mute</button>
+            <button class="btn" id="btn-reconnect-audio" hidden>Reconnect audio</button>
+          </div>
+          <p class="muted">Player volume and mute are local to this browser and do not change the camera. Audio: 8 kHz, mono.</p>
+          <audio id="audio-player" preload="none"></audio>
+        </div>
+      </section>
+
+      <!-- Screen 2: Controles -->
+      <section class="screen" id="screen-controls" data-screen="controls" hidden>
+        <div class="card">
+          <span class="card-title">Indicator and infrared</span>
+          <div class="field-row">
+            <div>
+              <div>Status indicator</div>
+              <div class="muted">Status light on the back of the camera.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="switch-indicator" disabled>
+              <span class="track"><span class="thumb"></span></span>
+              <span id="indicator-state">Off</span>
+            </label>
+          </div>
+          <div class="field-row">
+            <div>
+              <div>Infrared (night vision)</div>
+              <div class="muted">Infrared filter mode.</div>
+            </div>
+            <select id="select-ir" disabled aria-label="Infrared mode">
+              <option value="0">Off</option>
+              <option value="1">On</option>
+              <option value="2">Automatic</option>
+            </select>
+          </div>
+          <p class="muted">Changing the infrared mode changes the image on the Video screen. Values shown are read back from the camera.</p>
+        </div>
+      </section>
+
+      <!-- Screen 3: Informações -->
+      <section class="screen" id="screen-info" data-screen="info" hidden>
+        <div class="card">
+          <span class="card-title">Device status</span>
+          <div class="field-row">
+            <span>Battery level</span>
+            <span>
+              <span class="progress"><span class="progress-fill" id="battery-fill"></span></span>
+              <span class="mono" id="info-battery" style="margin-left:8px">—</span>
+            </span>
+          </div>
+          <div class="field-row"><span>USB charging</span><span id="info-charging">—</span></div>
+          <div class="field-row"><span>Firmware version</span><span class="mono" id="info-firmware">—</span></div>
+          <div class="field-row"><span>Camera clock</span><span class="mono" id="info-clock">—</span></div>
+          <div class="field-row"><span>Status light</span><span id="info-led">—</span></div>
+          <div class="btn-row">
+            <button class="btn" id="btn-refresh-info" disabled>Refresh now</button>
+            <span class="muted" id="info-updated">Last update: —</span>
+          </div>
+          <p class="muted">Refreshes automatically every 10 seconds while this screen is open.</p>
+          <p class="error-box" id="info-message" hidden></p>
+        </div>
+      </section>
+
+      <!-- Screen 4: Network (read-only) -->
+      <section class="screen" id="screen-network" data-screen="network" hidden>
+        <div class="card">
+          <span class="card-title">Wireless network</span>
+          <div class="field-row"><span>Connected Wi-Fi network (SSID)</span><span class="mono" id="net-ssid">—</span></div>
+          <div class="field-row"><span>Operating mode</span><span id="net-mode">—</span></div>
+          <div class="btn-row"><button class="btn" id="btn-refresh-net" disabled>Refresh</button></div>
+          <p class="muted">This screen is read-only.</p>
+          <p class="error-box" id="net-message" hidden></p>
+        </div>
+      </section>
+
+      <!-- Screen 5: About -->
+      <section class="screen" id="screen-about" data-screen="about" hidden>
+        <div class="card">
+          <span class="card-title">About</span>
+          <p><strong>Local Camera Panel</strong><br>Version 1.0.0</p>
+          <p>Local control panel for a Wi-Fi camera on this network.</p>
+                  </div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="statusbar" aria-live="polite">
+    <span class="panel message" id="status-message">Ready</span>
+    <span class="panel spacer-panel"></span>
+    <span class="panel" id="status-camera"></span>
+    <span class="panel" id="status-battery"></span>
+    <span class="panel" id="status-audio">Audio off</span>
+  </footer>
+</div>
+
+<!-- Connection dialog -->
+<div class="modal" id="modal-connect" role="dialog" aria-modal="true" aria-labelledby="connect-title" hidden>
+  <div class="modal-box">
+    <h2 id="connect-title">Connect to camera</h2>
+    <p class="muted">Enter the camera password. It is sent to the local server, is not saved to disk and is not stored in the browser.</p>
+    <label for="input-password" class="muted">Camera password</label>
+    <input type="password" id="input-password" autocomplete="off" placeholder="Camera password">
+    <div class="btn-row">
+      <button class="btn primary" id="btn-connect">Connect</button>
+    </div>
+    <p class="error-box" id="connect-error" hidden></p>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ----- helpers -------------------------------------------------------------
+  var $ = function (id) { return document.getElementById(id); };
+  var appState = { state: "disconnected", video_on: false, audio_on: false, last_error: null };
+  var currentScreen = "video";
+  var infoTimer = null;
+  var pollTimer = null;
+  var toastTimer = null;
+
+  // Returns {status, data}; never throws on HTTP errors.
+  function api(method, path, body) {
+    var opts = { method: method, headers: {} };
+    if (body !== undefined) {
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
+    return fetch(path, opts).then(function (r) {
+      return r.text().then(function (txt) {
+        var data = {};
+        try { data = txt ? JSON.parse(txt) : {}; } catch (e) { data = {}; }
+        return { status: r.status, data: data };
+      });
+    });
+  }
+
+  // Server error text (field "error", plus "detail" when present).
+  function serverMessage(res) {
+    var d = res.data || {};
+    if (d.error) { return d.detail ? d.error + " (" + d.detail + ")" : d.error; }
+    return "HTTP error " + res.status;
+  }
+
+  function setStatus(text, isError) {
+    var el = $("status-message");
+    el.textContent = text;
+    el.classList.toggle("error", !!isError);
+  }
+
+  function showToast(text) {
+    var t = $("toast");
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, 3500);
+  }
+
+  // ----- connection state ----------------------------------------------------
+  var PILL = {
+    disconnected: ["chip", "○ Disconnected"],
+    connecting: ["chip wait", "◐ Connecting"],
+    connected: ["chip ok", "● Connected"],
+    error: ["chip", "○ Error"]
+  };
+
+  function isConnected() { return appState.state === "connected"; }
+
+  function applyState(s) {
+    appState = s;
+    var pill = PILL[s.state] || PILL.disconnected;
+    $("conn-pill").className = pill[0];
+    $("conn-pill").textContent = pill[1];
+    $("menu-disconnect").disabled = !isConnected();
+
+    var needsLogin = s.state === "disconnected" || s.state === "error";
+    $("modal-connect").hidden = !needsLogin;
+    if (s.state === "error" && s.last_error) {
+      setStatus(s.last_error, true);
+    }
+
+    var on = isConnected();
+    $("btn-pause-video").disabled = !on;
+    $("btn-photo").disabled = !on;
+    $("btn-fullscreen").disabled = !on;
+    $("switch-audio").disabled = !on;
+    $("slider-volume").disabled = !on;
+    $("switch-indicator").disabled = !on;
+    $("select-ir").disabled = !on;
+    $("btn-refresh-info").disabled = !on;
+    $("btn-refresh-net").disabled = !on;
+    $("btn-mute-audio").disabled = !on;
+
+    renderVideo(!!s.video_on);
+    renderAudio(!!s.audio_on);
+    $("status-audio").textContent = s.audio_on ? "Audio on" : "Audio off";
+    $("status-camera").textContent = on ? "Camera connected" : "";
+    if (!on) {
+      $("status-battery").textContent = "";
+      stopInfoTimer();
+    }
+  }
+
+  function refreshState() {
+    return api("GET", "/api/estado").then(function (res) {
+      if (res.status === 200) { applyState(res.data); }
+    }).catch(function () { setStatus("No response from the local server.", true); });
+  }
+
+  function startEvents() {
+    if (!window.EventSource) { startPolling(); return; }
+    var es = new EventSource("/api/eventos");
+    es.addEventListener("state", function (e) {
+      stopPolling();
+      applyState(JSON.parse(e.data));
+    });
+    es.onopen = stopPolling;
+    es.onerror = startPolling;
+  }
+
+  function startPolling() {
+    if (!pollTimer) { pollTimer = setInterval(refreshState, 2000); }
+  }
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // ----- connection dialog ---------------------------------------------------
+  function connect() {
+    var field = $("input-password");
+    var password = field.value;
+    field.value = ""; // the password leaves the page as soon as it is sent
+    if (!password) {
+      $("connect-error").textContent = "Password required.";
+      $("connect-error").hidden = false;
+      return;
+    }
+    $("connect-error").hidden = true;
+    $("btn-connect").disabled = true;
+    setStatus("Connecting to camera…");
+    api("POST", "/api/conectar", { pwd: password }).then(function (res) {
+      password = null;
+      if (res.status === 200) {
+        setStatus("Camera connected.");
+        $("modal-connect").hidden = true;
+      } else {
+        var msg = serverMessage(res);
+        $("connect-error").textContent = msg;
+        $("connect-error").hidden = false;
+        setStatus(msg, true);
+      }
+      return refreshState();
+    }).catch(function () {
+      password = null;
+      setStatus("No response from the local server.", true);
+    }).then(function () { $("btn-connect").disabled = false; });
+  }
+
+  function disconnect() {
+    api("POST", "/api/desconectar", {}).then(function (res) {
+      if (res.status !== 200) { setStatus(serverMessage(res), true); return; }
+      setStatus("Camera disconnected.");
+      return refreshState();
+    });
+  }
+
+  // ----- video ---------------------------------------------------------------
+  function renderVideo(on) {
+    var img = $("stream-image");
+    $("video-paused").hidden = on;
+    $("video-badge").className = on ? "chip ok overlay-badge" : "chip wait overlay-badge";
+    $("video-badge").textContent = on ? "● Live" : "Paused";
+    $("btn-pause-video").textContent = on ? "Pause video" : "Resume video";
+    if (on) {
+      if (!img.getAttribute("src")) { img.src = "/stream?t=" + Date.now(); }
+    } else {
+      img.removeAttribute("src");
+    }
+  }
+
+  function toggleVideo() {
+    if (!isConnected()) { return; }
+    var next = !appState.video_on;
+    api("POST", "/api/video", { on: next }).then(function (res) {
+      if (res.status !== 200) { setStatus(serverMessage(res), true); return; }
+      appState.video_on = !!res.data.video_on;
+      renderVideo(appState.video_on);
+      setStatus(appState.video_on ? "Video live." : "Video paused.");
+    });
+  }
+
+  function takePhoto() {
+    var img = $("stream-image");
+    if (!appState.video_on || !img.naturalWidth) {
+      setStatus("Resume the video and wait for the first frame before taking a photo.", true);
+      return;
+    }
+    var canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext("2d").drawImage(img, 0, 0);
+    var d = new Date();
+    var p = function (n) { return String(n).padStart(2, "0"); };
+    var name = "foto_" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "_" +
+      p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + ".png";
+    canvas.toBlob(function (blob) {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      showToast("Frame captured and saved.");
+    }, "image/png");
+  }
+
+  function toggleFullscreen() {
+    var target = $("video-card");
+    var request = target.requestFullscreen || target.webkitRequestFullscreen;
+    if (request) { request.call(target); }
+  }
+
+  // ----- audio ---------------------------------------------------------------
+  // Chrome cannot play an endless WAV from <audio src>. Web Audio decodes the PCM
+  // and feeds a MediaStream that the <audio> element plays, so volume and mute stay on <audio>.
+  var AUDIO_LEAD_S = 0.25;      // first chunk plays this far ahead
+  var AUDIO_MAX_AHEAD_S = 0.6;  // chunks beyond this are dropped, so the delay cannot grow
+  var audioRun = null;          // active output: { ctx, dest, reader, nextTime, stopped }
+
+  function renderAudio(on) {
+    $("switch-audio").checked = on;
+    $("audio-state").textContent = on ? "Audio on" : "Audio off";
+    $("status-audio").textContent = on ? "Audio on" : "Audio off";
+    if (!on) { stopAudioStream(); }
+  }
+
+  function setVolume() {
+    var v = Number($("slider-volume").value);
+    $("volume-value").textContent = v + "%";
+    $("audio-player").volume = v / 100;
+  }
+
+  // Must run inside a click: browsers only allow audio output after a user gesture.
+  function prepareAudioOutput() {
+    stopAudioStream();
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var dest = ctx.createMediaStreamDestination();
+    var player = $("audio-player");
+    player.srcObject = dest.stream;
+    player.volume = Number($("slider-volume").value) / 100;
+    player.play().catch(function (e) { setStatus("Could not play the audio: " + e.message, true); });
+    audioRun = { ctx: ctx, dest: dest, reader: null, nextTime: 0, stopped: false };
+    return audioRun;
+  }
+
+  function startAudioStream(run) {
+    fetch("/audio.wav?t=" + Date.now(), { cache: "no-store" }).then(function (resp) {
+      if (!resp.ok) { throw new Error("HTTP " + resp.status); }
+      run.reader = resp.body.getReader();
+      readAudio(run, new Uint8Array(0), 44);
+    }).catch(function (e) { audioFailed(run, e); });
+  }
+
+  // Reads the stream; `pending` keeps an odd byte, `headerLeft` skips the 44-byte WAV header.
+  function readAudio(run, pending, headerLeft) {
+    run.reader.read().then(function (r) {
+      if (run.stopped) { return; }
+      if (r.done) { audioFailed(run, null); return; }
+      var data = new Uint8Array(pending.length + r.value.length);
+      data.set(pending);
+      data.set(r.value, pending.length);
+      if (headerLeft > 0) {
+        var skip = Math.min(headerLeft, data.length);
+        data = data.subarray(skip);
+        headerLeft -= skip;
+      }
+      var count = data.length >> 1;
+      pending = data.slice(count * 2);
+      if (count > 0) { playAudioChunk(run, data, count); }
+      readAudio(run, pending, headerLeft);
+    }).catch(function (e) { audioFailed(run, e); });
+  }
+
+  function playAudioChunk(run, bytes, count) {
+    var ctx = run.ctx;
+    var now = ctx.currentTime;
+    if (run.nextTime - now > AUDIO_MAX_AHEAD_S) { return; }  // too far ahead: drop
+    var view = new DataView(bytes.buffer, bytes.byteOffset, count * 2);
+    var buffer = ctx.createBuffer(1, count, 8000);
+    var out = buffer.getChannelData(0);
+    for (var i = 0; i < count; i++) { out[i] = view.getInt16(i * 2, true) / 32768; }
+    var source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(run.dest);
+    if (run.nextTime < now + 0.02) {  // underrun: restart with a lead (audible as a gap)
+      run.nextTime = now + AUDIO_LEAD_S;
+      var player = $("audio-player");
+      player.dataset.underruns = String((Number(player.dataset.underruns) || 0) + 1);
+    }
+    source.start(run.nextTime);
+    run.nextTime += buffer.duration;
+    $("audio-player").dataset.aheadMs = Math.round((run.nextTime - ctx.currentTime) * 1000);
+  }
+
+  function audioFailed(run, error) {
+    if (run.stopped) { return; }
+    stopAudioStream();
+    if (appState.audio_on) {
+      setStatus("Audio interrupted. Use 'Reconnect audio' to try again.", true);
+      $("btn-reconnect-audio").hidden = false;
+    }
+  }
+
+  function stopAudioStream() {
+    var run = audioRun;
+    audioRun = null;
+    if (!run) { return; }
+    run.stopped = true;
+    if (run.reader) { run.reader.cancel().catch(function () {}); }
+    run.ctx.close().catch(function () {});
+    var player = $("audio-player");
+    player.pause();
+    player.srcObject = null;
+  }
+
+  function toggleAudio() {
+    var wanted = $("switch-audio").checked;
+    var run = wanted ? prepareAudioOutput() : null;
+    api("POST", "/api/audio", { on: wanted }).then(function (res) {
+      if (res.status !== 200) {
+        $("switch-audio").checked = !wanted;
+        stopAudioStream();
+        setStatus(serverMessage(res), true);
+        return;
+      }
+      appState.audio_on = !!res.data.audio_on;
+      renderAudio(appState.audio_on);
+      $("btn-reconnect-audio").hidden = true;
+      if (appState.audio_on) { startAudioStream(run); }
+    });
+  }
+
+  function reconnectAudio() {
+    var run = prepareAudioOutput();
+    $("btn-reconnect-audio").hidden = true;
+    api("POST", "/api/audio", { on: true }).then(function (res) {
+      if (res.status !== 200) {
+        stopAudioStream();
+        $("btn-reconnect-audio").hidden = false;
+        setStatus(serverMessage(res), true);
+        return;
+      }
+      appState.audio_on = true;
+      renderAudio(true);
+      startAudioStream(run);
+    });
+  }
+
+  function toggleMute() {
+    var player = $("audio-player");
+    player.muted = !player.muted;
+    $("btn-mute-audio").textContent = player.muted ? "Unmute" : "Mute";
+    $("btn-mute-audio").setAttribute("aria-pressed", String(player.muted));
+  }
+
+  // ----- controls ------------------------------------------------------------
+  // Show the value the camera reports back, not the value the user picked.
+  function setIndicator(on) {
+    $("switch-indicator").checked = on;
+    $("indicator-state").textContent = on ? "On" : "Off";
+  }
+
+  function toggleIndicator() {
+    var wanted = $("switch-indicator").checked;
+    $("switch-indicator").disabled = true;
+    api("POST", "/api/indicador", { on: wanted }).then(function (res) {
+      $("switch-indicator").disabled = !isConnected();
+      if (res.status !== 200) {
+        setIndicator(!wanted);
+        setStatus(serverMessage(res), true);
+        return;
+      }
+      setIndicator(!!res.data.indicator);
+      if (!res.data.confirmed) { setStatus("The camera did not confirm the indicator change.", true); }
+    });
+  }
+
+  function changeInfrared() {
+    var select = $("select-ir");
+    var wanted = Number(select.value);
+    select.disabled = true;
+    api("POST", "/api/infravermelho", { mode: wanted }).then(function (res) {
+      select.disabled = !isConnected();
+      if (res.status !== 200) {
+        setStatus(serverMessage(res), true);
+        return;
+      }
+      select.value = String(res.data.mode);
+      if (!res.data.confirmed) { setStatus("The camera did not confirm the infrared mode.", true); }
+    });
+  }
+
+  // ----- information and network --------------------------------------------
+  var CHARGING = { true: "Yes (on power)", false: "No (on battery)" };
+
+  function loadInfo() {
+    if (!isConnected()) {
+      showInfoMessage("Connect the camera to see its information.");
+      return;
+    }
+    api("GET", "/api/info").then(function (res) {
+      if (res.status !== 200) { showInfoMessage(serverMessage(res)); return; }
+      var d = res.data;
+      showInfoMessage("");
+      var battery = Number(d.battery) || 0;
+      $("battery-fill").style.width = Math.max(0, Math.min(100, battery)) + "%";
+      $("info-battery").textContent = battery + "%";
+      $("info-charging").textContent = CHARGING[String(!!d.charging)];
+      $("info-firmware").textContent = d.firmware || "—";
+      $("info-clock").textContent = d.time
+        ? new Date(d.time * 1000).toLocaleString("pt-BR") + " (camera time)" : "—";
+      $("info-led").textContent = d.led_status === 1 ? "On" : "Off";
+      $("info-updated").textContent = "Last update: " + new Date().toLocaleTimeString("pt-BR");
+      $("status-battery").textContent = "Battery: " + battery + "%" + (d.charging ? " (charging)" : "");
+    }).catch(function () { showInfoMessage("No response from the local server."); });
+  }
+
+  function showInfoMessage(text) {
+    var el = $("info-message");
+    el.textContent = text;
+    el.hidden = !text;
+  }
+
+  function startInfoTimer() {
+    stopInfoTimer();
+    infoTimer = setInterval(loadInfo, 10000);
+  }
+  function stopInfoTimer() {
+    if (infoTimer) { clearInterval(infoTimer); infoTimer = null; }
+  }
+
+  var MODE_TEXT = { 1: "Station (LAN infrastructure)", 0: "Access point (AP mode)" };
+
+  function loadNetwork() {
+    if (!isConnected()) {
+      showNetMessage("Connect the camera to see the network.");
+      return;
+    }
+    api("GET", "/api/rede").then(function (res) {
+      if (res.status !== 200) { showNetMessage(serverMessage(res)); return; }
+      showNetMessage("");
+      $("net-ssid").textContent = res.data.ssid || "—";
+      $("net-mode").textContent = MODE_TEXT[res.data.conmode] || "Unknown";
+    }).catch(function () { showNetMessage("No response from the local server."); });
+  }
+
+  function showNetMessage(text) {
+    var el = $("net-message");
+    el.textContent = text;
+    el.hidden = !text;
+  }
+
+  // ----- navigation and menus ------------------------------------------------
+  function showScreen(name) {
+    currentScreen = name;
+    document.querySelectorAll(".screen").forEach(function (s) {
+      s.hidden = s.dataset.screen !== name;
+    });
+    document.querySelectorAll(".nav-item").forEach(function (b) {
+      if (b.dataset.screen === name) { b.setAttribute("aria-current", "page"); }
+      else { b.removeAttribute("aria-current"); }
+    });
+    stopInfoTimer();
+    if (name === "info") { loadInfo(); startInfoTimer(); }
+    if (name === "network") { loadNetwork(); }
+  }
+
+  function closeMenus() {
+    document.querySelectorAll(".menu-list").forEach(function (m) { m.classList.remove("open"); });
+    document.querySelectorAll(".menu-button").forEach(function (b) { b.setAttribute("aria-expanded", "false"); });
+  }
+
+  function setTheme(name) {
+    document.documentElement.setAttribute("data-theme", name);
+  }
+
+  function runAction(action) {
+    if (action === "connect") { $("modal-connect").hidden = false; $("input-password").focus(); }
+    else if (action === "disconnect") { disconnect(); }
+    else if (action === "refresh-state") { refreshState(); }
+    else if (action === "theme-dark") { setTheme("dark"); }
+    else if (action === "theme-light") { setTheme("light"); }
+    else if (action === "about") { showScreen("about"); }
+  }
+
+  // Ctrl+1..5 switch screens; Space toggles video when no field has focus.
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey && /^[1-5]$/.test(e.key)) {
+      e.preventDefault();
+      showScreen(["video", "controls", "info", "network", "about"][Number(e.key) - 1]);
+      return;
+    }
+    if (e.key === "Escape") {
+      if (!$("modal-connect").hidden && isConnected()) { $("modal-connect").hidden = true; }
+      closeMenus();
+      return;
+    }
+    if (e.key === " " && currentScreen === "video") {
+      var t = e.target;
+      var tag = t && t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || (t && t.isContentEditable)) { return; }
+      if ($("modal-connect").hidden === false) { return; }
+      e.preventDefault();
+      toggleVideo();
+    }
+  });
+
+  document.querySelectorAll(".menu-button").forEach(function (b) {
+    b.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var list = $("menu-" + b.dataset.menu);
+      var open = !list.classList.contains("open");
+      closeMenus();
+      if (open) {
+        list.classList.add("open");
+        b.setAttribute("aria-expanded", "true");
+      }
+    });
+  });
+  document.querySelectorAll("[data-action]").forEach(function (b) {
+    b.addEventListener("click", function () { closeMenus(); runAction(b.dataset.action); });
+  });
+  document.querySelectorAll(".nav-item").forEach(function (b) {
+    b.addEventListener("click", function () { showScreen(b.dataset.screen); });
+  });
+  document.addEventListener("click", closeMenus);
+
+  // ----- wiring ----------------------------------------------------------------
+  $("btn-connect").addEventListener("click", connect);
+  $("input-password").addEventListener("keydown", function (e) { if (e.key === "Enter") { connect(); } });
+  $("btn-pause-video").addEventListener("click", toggleVideo);
+  $("btn-photo").addEventListener("click", takePhoto);
+  $("btn-fullscreen").addEventListener("click", toggleFullscreen);
+  $("switch-audio").addEventListener("change", toggleAudio);
+  $("btn-mute-audio").addEventListener("click", toggleMute);
+  $("btn-reconnect-audio").addEventListener("click", reconnectAudio);
+  $("slider-volume").addEventListener("input", setVolume);
+  $("switch-indicator").addEventListener("change", toggleIndicator);
+  $("select-ir").addEventListener("change", changeInfrared);
+  $("btn-refresh-info").addEventListener("click", loadInfo);
+  $("btn-refresh-net").addEventListener("click", loadNetwork);
+
+  // Dark by default; light only when the system asks for it.
+  if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+    setTheme("light");
+  }
+  setVolume();
+  showScreen("video");
+  refreshState();
+  startEvents();
+})();
+</script>
+</body>
+</html>
