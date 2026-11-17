@@ -4,7 +4,7 @@
 
 This document describes the CS2 peer-to-peer protocol (PPCS / PPPP) as used by a Wi-Fi IP camera. It covers LAN discovery, library initialization, the proprietary cipher, the packet framing, the CRC layer, login, control channel, video and audio reception. The information comes from decompilation of the vendor's native library (`libobject_jni.so`, arm64-v8a build) and from a LAN packet capture taken on a personal, non-commercial interoperability test with the owner's own camera.
 
-Status: partially verified.
+Status: a LAN client that discovers the camera, logs in, streams MJPEG video and plays live audio is working against one camera model. Some field semantics and one cipher detail remain hypotheses (marked below).
 
 Legend:
 
@@ -113,14 +113,14 @@ Followed by n bytes of data.
 
 The data thread `CPPPPChannel::DataThread` (0x1dcf0c) calls `AttachCurrentThread` and then `DataProcess`.
 
-## 6. Open items (next steps)
+## 6. Open decompilation items
 
 1. Decompile `cs2p2p_PPPP_Write_Header` (sets byte0, type, and length for writing) and the payload of `cs2p2p_PPPP_Proto_Send_DevLgn` (`Write_DevLgn`), which defines the login.
 2. Decompile `cs2p2p_PPPP_Connect` (0x20cf3c, 7 KB) and `cs2p2p_PPPP_Proto_Send_PunchPkt`, which define the handshake sequence.
 3. Decompile `cs2p2p_PPPP_Proto_Read_DevLgn` (0x213df8) and `Proto_Read_RlyReq` / `Proto_Read_RlyPkt`, which define the login and relay responses.
 4. Decompile `cs2p2p_PPPP_Read` (0x20e908, 22 KB) to confirm the user data path.
 5. Decompile `CPPPPChannel::cgi_livestream` (see `_ZN12CPPPPChannel14cgi_livestreamEii`). The content of `GET /livestream.cgi` has so far been seen only as a string.
-6. Validate the S-box dump (`code/tables/p2p_sbox.bin`) with at least one encrypt-decrypt round trip and, when a capture is available, with a known plaintext (for example an encrypted `GET /livestream`).
+6. ~~Validate the S-box dump with a round trip~~ Done: the round trip passes (section 8), and the working LAN client confirms the cipher against a live camera (section 16).
 
 ## 7. Risks
 
@@ -143,7 +143,7 @@ Corrections to an earlier unverified report:
 - Line-number references of the form `thread_recv_Proto:NNN` in the earlier report cannot be checked against the decompilation. Treat the assignment of message types to handlers as [HYPOTHESIS] until the dispatcher has been read.
 - Several entries in the constants list pointed to files that do not exist. Only the addresses are used here.
 
-A Python re-implementation of the cipher (`code/p2pcrypto.py`) matches the decompiled cipher. A round trip over 1000 random inputs succeeded 1000 of 1000 times. Compatibility with a real camera has not yet been demonstrated. [HYPOTHESIS]
+A Python re-implementation of the cipher (`code/p2pcrypto.py`) matches the decompiled cipher. A round trip over 1000 random inputs succeeded 1000 of 1000 times. Compatibility with a real camera was demonstrated later (section 16).
 
 ## 9. Open items (next pass)
 
@@ -203,17 +203,19 @@ Verified against the decompilation:
   - Consequence: the original app probably does not initialize the library on this date. For this project's client, calling `cs2p2p_PPPP_Initialize` directly is sufficient. The native function `cs2p2p_PPPP_Initialize` (0x201bdc) does not have this date check (verified in section 2). [HYPOTHESIS: to be tested with the camera.]
 - Factory default credentials are defined in the app source (`ContentCommon.java`, lines 179-180): the default user name is <user>, and the default password is <password> (4 digits).
 
-Reported in an earlier report, NOT yet verified:
+Status of the earlier items (confirmed on the wire in section 15):
 
-- `user` / `pwd` enter the DRW channel 0 as JSON: `{"pro":"check_user","cmd":100,"devmac":...,"user":...,"pwd":...}`. The string exists at 0x7efbb7, so the JSON is present. The framing has not been verified.
-- An 8-byte header `06 0a a0 80 | len LE32` precedes the JSON (CommandProcess 0x1dc6d4 / cgi_get_common 0x1d7780). [HYPOTHESIS]
-- The response `{"result":..,"admin":..,"mode":..,"type":..}` is processed by JasonProcessCheckUser (0x1d9794).
+- `user` / `pwd` enter the DRW channel 0 as JSON: `{"pro":"check_user","cmd":100,"devmac":...,"user":...,"pwd":...}`. Confirmed.
+- The 8-byte header `06 0a a0 80 | len LE32` precedes the JSON. Confirmed by the captured traffic; the reply uses `06 0a a1 80`.
+- The response `{"result":..,"admin":..,"mode":..,"type":..}` is processed by JasonProcessCheckUser (0x1d9794). The result field is confirmed on the wire.
 
-## 12. Next practical step: LAN probe
+## 12. LAN probe (historical)
 
 With the camera connected to the same Wi-Fi network, a LanSearch packet (`F1 30 00 00`) sent as a UDP broadcast to port 32108 should elicit a response from the camera (PunchPkt, type 0x41; see section 8). This is a passive and safe test, performed on the owner's own camera. If the camera responds, the port, the framing, and the fact that the native library speaks this protocol are all confirmed.
 
-## 13. LAN probe on the owner's camera (2026-10-15): no response
+## 13. LAN probe on the owner's camera (2026-10-15): no response (resolved)
+
+The probe failed because it sent LanSearch in clear text. Once the packets are encrypted with SHIX, the camera answers (section 15).
 
 - The camera is connected to a domestic Wi-Fi network. Its device identifier (DID) starts with the prefix `EEE` (the full value is redacted), which maps to TAG `SHIX` through `getServer`. Key: CRC / P2P `SHIX`. [HYPOTHESIS]
 - Local host: <host-ip> (wlan0), /24.
@@ -289,7 +291,7 @@ Result: the encrypted LanSearch succeeded. The camera replies from an ephemeral 
 
 **Port bug (fixed):** the `--port` option overwrote the port of the LanSearch reply.
 
-**Pending:** the raw channel 1 packet dump (about 5 MB, for offline analysis) can be deleted when no longer needed. The frames of about 1.7 KB and 3.5 KB (frames 163 and 256) are too small for a 640x480 JPEG. They are probably partial or low-quality frames, and this needs to be checked.
+The small frames (about 1.7 KB and 3.5 KB) were fragments of incomplete frames; their cause is explained in section 17. The raw channel 1 dump is used only for offline analysis and is not part of the repository.
 
 ## 17. Broken frames (2026-10-15)
 
@@ -302,10 +304,35 @@ Verified against a raw dump of channel 1 packets (not included): 5105 packets; 2
 - The ACK is SELECTIVE (a list of sequence numbers) and there is no NACK. Retransmissions come from sender timeouts (RTO about 4-18 ms). The observed window allows up to 18 unacknowledged packets. The median ACK delay is about 3 ms after the packet.
 - The client now uses `code/video_assemble.py` (`VideoAssembler`, window = 300). It accepts `--view PORT` to show the video at http://127.0.0.1:PORT via `code/cy_viewer.py`.
 
-## 18. Audio: codec is IMA ADPCM, not A-law (2026-10-15)
+## 18. Audio: codec is IMA ADPCM, not A-law
 
 - The codec type 0x0b in the AV header of channel 2 uses `CAdpcm::ADPCMDecode` (0x1d30fc), not `ADecode` (A-law). Confirmed by disassembly of `CPPPPChannel::AudioProces`.
-- Nibble order: high nibble first (lag-1 correlation 0.95, against 0.91 for the low-first order, reproduced in this work).
-- Decoder state is reset for each frame (predictor 0, index 0). When the state carries over between frames, the output overflows (RMS 16629, peak 32768). With the reset, RMS is 343 and peak is 7949, a plausible ambient level. [To be confirmed by listening to the WAV.]
-- Test WAV: 39680 samples, 8 kHz, 16-bit, mono, decoded from real app traffic in a packet capture (not included in this repository).
-- Hypothesis to verify: the camera may send a state header per frame. The reset to zero was chosen because it gives a plausible level. [HYPOTHESIS]
+- Nibble order: high nibble first (lag-1 correlation 0.95, against 0.91 for the low-first order, as reported by the decompilation analysis).
+- The decoder state is reset for each frame (predictor 0, index 0). When the state carries over between frames, the output overflows (RMS 16629, peak 32768). With the reset, the output is at ambient level. This is the behaviour the implementation uses.
+- Audio frame layout in the capture: a 32-byte AV header (magic `55 aa 15 a8`, codec `0x0b` at offset 4, size LE32 at offset 16), followed by 160 or 352 bytes of IMA ADPCM. A single DRW payload can carry two frames (offsets 0 and 192 in a 384-byte payload). Retransmitted payloads are identical and must be dropped.
+- Reference measurement (re-run for this document): 100 frames after dropping 12 retransmitted payloads, 32000 samples (4.0 s, 8 kHz, 16-bit, mono), RMS 380.4, peak 7949. The earlier figures (39680 samples, RMS 343) came from a previous extraction and are superseded. The WAV is generated by `code/teste_audio.py --pcap <out.wav>` with `CAMERA_IP` set to the camera address in the capture. The capture itself is not part of the repository.
+- The live audio plays in the web panel; the owner confirmed this on the real camera.
+- Open question: whether the camera sends any per-frame state header. The per-frame reset works in practice, so no header is needed for playback. [HYPOTHESIS]
+
+## 19. Current state (2026-11)
+
+Verified on the owner's camera:
+
+| Area | Status |
+|---|---|
+| LAN discovery and handshake (encrypted LanSearch, PunchPkt, P2PRdy) | Working (section 15, 16) |
+| Login (`check_user`, result 0) | Working |
+| Live MJPEG video (DRW channel 1, ACKs, out-of-order reassembly) | Working in the captured session and the early client runs (section 16, 17) |
+| Live audio (IMA ADPCM, channel 2, per-frame decoding) | Working in the web panel (confirmed by the owner) |
+
+Implemented but not exercised against the camera in this phase:
+
+- Write commands in `code/teste_escrita_*.py` (LED, light, Wi-Fi) and the night-vision experiment. They require explicit confirmation flags and have not been run on the camera.
+- The web panel controls for the status LED, infrared mode, white light and Wi-Fi. Their behaviour on the camera is not recorded here.
+
+Limits and open points:
+
+- The video header fields other than the magic and the JPEG payload are not fully decoded (section 15).
+- The browser cannot play an endless WAV through `<audio src>`, so the panel decodes the stream with Web Audio.
+- Whether the camera sends a per-frame audio state header is not known; the per-frame reset works in practice (section 18).
+- The decompilation items in section 6 are open, but they no longer block the client.

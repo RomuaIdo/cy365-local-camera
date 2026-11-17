@@ -254,7 +254,8 @@ def run_capture(a):
 # ----- real payloads from the app capture -----
 
 DEFAULT_PCAP = os.path.join(HERE, "..", "captures", "PCAPdroid_15_out._01_26_14.pcap")
-PCAP_CAMERA_IP = "192.168.1.100"
+# Camera address inside the capture. Set CAMERA_IP to the address that appears in your own capture.
+PCAP_CAMERA_IP = os.environ.get("CAMERA_IP", "192.168.1.100")
 
 
 def pcap_payloads(path=DEFAULT_PCAP, cam=PCAP_CAMERA_IP, channel=2):
@@ -403,8 +404,12 @@ def _tests():
 def make_pcap_wav(output):
     "WAV from the real capture payloads, decoded frame by frame with IMA ADPCM (state reset per frame)."
     frames, r = build_frames([p for _, p in pcap_payloads()])
+    if not frames:
+        sys.exit("no audio frames found: set CAMERA_IP to the camera address in the capture and check the capture path")
     pcm = b"".join(ima_pcm_bytes(f) for f in frames)
     samples = samples_of(pcm)
+    if not samples:
+        sys.exit("audio frames decoded to zero samples; the capture payloads are not IMA ADPCM audio")
     m = metrics(samples)
     m["near_zero_|x|<=64_%"] = round(100.0 * sum(1 for x in samples if abs(x) <= 64) / len(samples), 2)
     save_wav(output, pcm)
