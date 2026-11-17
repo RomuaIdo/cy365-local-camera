@@ -109,7 +109,7 @@ python3 -I -B app/teste_servidor_falso.py 8080 --audio-feed
 ## Legal and ethical note
 
 This is an interoperability project for hardware owned by the author. It documents observed
-behaviour on the local network so that the owner can control their own device without a vendor
+behaviour on the local network so that users can control their own device without a vendor
 cloud. It is not affiliated with, endorsed by, or sponsored by the camera vendor. No vendor
 firmware, application binaries or proprietary source code are included.
 
